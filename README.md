@@ -137,15 +137,17 @@ Search response:
 
 ## Environment Variables (Complete)
 
+
+
 | Variable                      | Purpose                        | Default                     |
-| ----------------------------- | ------------------------------ | --------------------------- | ---- |
+| ----------------------------- | ------------------------------ | --------------------------- |
 | CONFIG_PATH                   | Path to JSON config            | (required if no CLI arg)    |
 | PORT                          | HTTP port                      | 3000                        |
 | DUCKDB_PATH                   | DuckDB file path               | ./data/iot.duckdb           |
 | DUCKDB_THREADS                | DuckDB threads                 | 4                           |
 | DUCKDB_STARTUP_MEMORY         | DuckDB initial memory limit    | 4GB                         |
 | GLOBAL_LOG_LEVEL              | TRACE/DEBUG/INFO/WARN/ERROR    | INFO                        |
-| GLOBAL_LOG_FORMAT             | json                           | simple                      | json |
+| GLOBAL_LOG_FORMAT             | json                           | simple                      |
 | GLOBAL_LOG_TIMESTAMP          | Include timestamp if set       | (off)                       |
 | GLOBAL_LOG_CONTEXT_FOR_LEVELS | Levels with context logging    | trace,debug,info,warn,error |
 | TRACE                         | Extra trace for status SQL     | (off)                       |
