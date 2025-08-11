@@ -135,11 +135,12 @@ export class DeviceMetricValueRepository {
 
   async insert(value: DeviceMetricValue): Promise<void> {
     await this.conn.run(
-      `insert into device_metric_values(metric_id, ts, value) values($metric_id,$ts,$value)`,
+      `insert into device_metric_values(metric_id, ts, value, from_birth) values($metric_id,$ts,$value,$from_birth) on conflict(metric_id, ts) do nothing`,
       {
         metric_id: value.metricId,
         ts: value.ts.toISOString().replace("T", " ").replace("Z", ""),
         value: toStoredValue(value.value),
+        from_birth: value.fromBirth ? true : false,
       }
     );
   }
@@ -161,7 +162,7 @@ export class DeviceMetricValueRepository {
     }
     const sql = `insert into device_metric_values(metric_id, ts, value, from_birth) values ${rows.join(
       ","
-    )}`;
+    )} on conflict(metric_id, ts) do nothing`;
     await this.conn.run(sql);
   }
 

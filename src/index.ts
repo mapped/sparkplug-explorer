@@ -478,7 +478,11 @@ function registerApi(app: any) {
     const lim = coerceLimit(limit);
     const conn = await getConnection();
     const pattern = q === "" ? "" : q;
-    const sql = `select * from (\n      select device_name as name, 'device' as type, device_name as device_name, NULL as metric_name from devices where $pattern='' or device_name like $pattern||'%'\n      union all\n      select metric_name as name, 'metric' as type, device_name as device_name, metric_name as metric_name from device_metrics where $pattern='' or metric_name like $pattern||'%'\n    ) order by name asc, type asc limit $limit`;
+    const sql = `select * from (
+      select device_name as name, 'device' as type, device_name as device_name, NULL as metric_name from devices where $pattern='' or device_name ilike $pattern||'%'
+      union all
+      select metric_name as name, 'metric' as type, device_name as device_name, metric_name as metric_name from device_metrics where $pattern='' or metric_name ilike $pattern||'%'
+    ) order by name asc, type asc limit $limit`;
     const reader = await conn.runAndReadAll(sql, { pattern, limit: lim });
     const rows = reader.getRowObjects();
     return {

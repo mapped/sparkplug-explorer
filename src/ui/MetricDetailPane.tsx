@@ -54,7 +54,22 @@ function tryBoolean(v: any): boolean | undefined {
 }
 
 const MetricDetailPane: React.FC<Props> = ({ device, metric }) => {
-  const [range, setRange] = useState<"24h" | "7d">("24h");
+  const [range, setRange] = useState<"1h" | "24h" | "7d">("1h");
+  const RANGE_LS_KEY = "metric_detail_range_v1";
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(RANGE_LS_KEY);
+      if (stored === "1h" || stored === "24h" || stored === "7d") {
+        setRange(stored);
+      }
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(RANGE_LS_KEY, range);
+    } catch {}
+  }, [range]);
+
   const [values, setValues] = useState<ValueRow[]>([]);
   const [latest, setLatest] = useState<ValueRow | null>(null);
   const pollInterval = 5000;
@@ -72,7 +87,8 @@ const MetricDetailPane: React.FC<Props> = ({ device, metric }) => {
       const now = new Date();
       const to = now.toISOString();
       const from = new Date(
-        now.getTime() - (range === "24h" ? 24 : 24 * 7) * 3600 * 1000
+        now.getTime() -
+          (range === "1h" ? 1 : range === "24h" ? 24 : 24 * 7) * 3600 * 1000
       ).toISOString();
       const r = await fetch(
         `/api/metrics/${encodeURIComponent(device)}/${encodeURIComponent(
@@ -158,10 +174,19 @@ const MetricDetailPane: React.FC<Props> = ({ device, metric }) => {
   const xTicks = React.useMemo(() => {
     if (!chartData.length) return [] as number[];
     const end = Date.now();
-    const rangeMs = range === "24h" ? 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000;
+    const rangeMs =
+      range === "1h"
+        ? 1 * 3600 * 1000
+        : range === "24h"
+        ? 24 * 3600 * 1000
+        : 7 * 24 * 3600 * 1000;
     const start = end - rangeMs;
-    const intervalMs = range === "24h" ? 15 * 60 * 1000 : 60 * 60 * 1000;
-    // align start to next interval boundary
+    const intervalMs =
+      range === "1h"
+        ? 5 * 60 * 1000
+        : range === "24h"
+        ? 15 * 60 * 1000
+        : 60 * 60 * 1000;
     const startAligned = Math.ceil(start / intervalMs) * intervalMs;
     const ticks: number[] = [];
     for (let t = startAligned; t <= end; t += intervalMs) ticks.push(t);
@@ -171,7 +196,7 @@ const MetricDetailPane: React.FC<Props> = ({ device, metric }) => {
   const formatTick = React.useCallback(
     (t: number) => {
       const d = new Date(t);
-      if (range === "24h") {
+      if (range === "1h" || range === "24h") {
         return d.toLocaleTimeString(undefined, {
           hour: "2-digit",
           minute: "2-digit",
@@ -257,11 +282,12 @@ const MetricDetailPane: React.FC<Props> = ({ device, metric }) => {
         exclusive
         onChange={(_, v) => v && setRange(v)}
       >
+        <ToggleButton value="1h">1h</ToggleButton>
         <ToggleButton value="24h">24h</ToggleButton>
         <ToggleButton value="7d">7d</ToggleButton>
       </ToggleButtonGroup>
-      <Paper variant="outlined" sx={{ flex: 0, minHeight: chartHeight, p: 1 }}>
-        {showChart ? (
+      {showChart && (
+        <Paper variant="outlined" sx={{ flex: 0, minHeight: chartHeight, p: 1 }}>
           <ResponsiveContainer width="100%" height={chartHeight - 16}>
             <LineChart
               data={chartData}
@@ -297,21 +323,8 @@ const MetricDetailPane: React.FC<Props> = ({ device, metric }) => {
               />
             </LineChart>
           </ResponsiveContainer>
-        ) : (
-          <Box
-            sx={{
-              height: 240,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "text.secondary",
-              fontSize: 12,
-            }}
-          >
-            Non-numeric metric (chart hidden)
-          </Box>
-        )}
-      </Paper>
+        </Paper>
+      )}
       <Paper
         variant="outlined"
         sx={{ flex: 1, overflow: "auto", minHeight: 0 }}

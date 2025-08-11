@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import ClickAwayListener from "@mui/material/ClickAwayListener";
 import { SearchResult } from "./App";
+import { keyframes } from "@emotion/react";
 
 interface Props {
   onSelect(r: SearchResult): void;
@@ -18,6 +19,12 @@ interface Props {
   setOpen(v: boolean): void;
 }
 const DEBOUNCE_MS = 150;
+
+const pulse = keyframes`
+  0% { transform: scale(.6); opacity: .4; }
+  50% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(.6); opacity: .4; }
+`;
 
 const SearchBar: React.FC<Props> = ({ onSelect, open, setOpen }) => {
   const [value, setValue] = useState("");
@@ -28,6 +35,12 @@ const SearchBar: React.FC<Props> = ({ onSelect, open, setOpen }) => {
   const [metricStatuses, setMetricStatuses] = useState<Record<string, string>>(
     {}
   );
+  const [stableDeviceStatuses, setStableDeviceStatuses] = useState<
+    Record<string, string>
+  >({});
+  const [stableMetricStatuses, setStableMetricStatuses] = useState<
+    Record<string, string>
+  >({});
   const timer = useRef<number | undefined>();
   const suppressNextSearch = useRef(false); // suppress debounce after programmatic selection
   const statusTimer = useRef<number | undefined>();
@@ -46,12 +59,22 @@ const SearchBar: React.FC<Props> = ({ onSelect, open, setOpen }) => {
       )
         .then((r) => r.json())
         .then((data) => {
-          const next = { ...deviceStatuses } as Record<string, string>;
-          (data.statuses || []).forEach((s: any) => {
-            if (s.status === "grey") return; // keep loading
-            next[s.name] = s.status;
+          setDeviceStatuses((prev) => {
+            const next = { ...prev } as Record<string, string>;
+            (data.statuses || []).forEach((s: any) => {
+              if (s.status === "grey") return; // keep loading
+              next[s.name] = s.status;
+            });
+            return next;
           });
-          setDeviceStatuses(next);
+          setStableDeviceStatuses((prev) => {
+            const next = { ...prev };
+            (data.statuses || []).forEach((s: any) => {
+              if (s.status === "grey") return;
+              if (!prev[s.name]) next[s.name] = s.status;
+            });
+            return next;
+          });
         })
         .catch(() => {});
     }
@@ -69,16 +92,27 @@ const SearchBar: React.FC<Props> = ({ onSelect, open, setOpen }) => {
       )
         .then((r) => r.json())
         .then((data) => {
-          const next = { ...metricStatuses } as Record<string, string>;
-          (data.statuses || []).forEach((s: any) => {
-            if (s.status === "grey") return;
-            next[dev + "::" + s.name] = s.status;
+          setMetricStatuses((prev) => {
+            const next = { ...prev } as Record<string, string>;
+            (data.statuses || []).forEach((s: any) => {
+              if (s.status === "grey") return;
+              next[dev + "::" + s.name] = s.status;
+            });
+            return next;
           });
-          setMetricStatuses(next);
+          setStableMetricStatuses((prev) => {
+            const next = { ...prev };
+            (data.statuses || []).forEach((s: any) => {
+              if (s.status === "grey") return;
+              const key = dev + "::" + s.name;
+              if (!prev[key]) next[key] = s.status;
+            });
+            return next;
+          });
         })
         .catch(() => {});
     });
-  }, [results, deviceStatuses, metricStatuses]);
+  }, [results]);
 
   useEffect(() => {
     if (!open || !results.length) return;
@@ -205,37 +239,46 @@ const SearchBar: React.FC<Props> = ({ onSelect, open, setOpen }) => {
                             height: 10,
                             borderRadius: "50%",
                             bgcolor: (() => {
-                              const st =
+                              const stKey =
+                                r.type === "device"
+                                  ? r.deviceName
+                                  : r.deviceName + "::" + r.metricName;
+                              const live =
                                 r.type === "device"
                                   ? deviceStatuses[r.deviceName]
-                                  : metricStatuses[
-                                      r.type === "metric"
-                                        ? r.deviceName + "::" + r.metricName
-                                        : ""
-                                    ];
-                              const loading = st === undefined;
-                              return !loading && st === "green"
+                                  : metricStatuses[stKey];
+                              const stable =
+                                r.type === "device"
+                                  ? stableDeviceStatuses[r.deviceName]
+                                  : stableMetricStatuses[stKey];
+                              const effective = live || stable; // prefer latest non-loading
+                              const loading = !effective;
+                              return !loading && effective === "green"
                                 ? "success.main"
-                                : !loading && st === "yellow"
+                                : !loading && effective === "yellow"
                                 ? "warning.main"
-                                : !loading && st === "red"
+                                : !loading && effective === "red"
                                 ? "error.main"
                                 : "info.main";
                             })(),
                             flexShrink: 0,
                             ...(() => {
-                              const st =
+                              const stKey =
+                                r.type === "device"
+                                  ? r.deviceName
+                                  : r.deviceName + "::" + r.metricName;
+                              const live =
                                 r.type === "device"
                                   ? deviceStatuses[r.deviceName]
-                                  : metricStatuses[
-                                      r.type === "metric"
-                                        ? r.deviceName + "::" + r.metricName
-                                        : ""
-                                    ];
-                              if (st !== undefined) return {};
+                                  : metricStatuses[stKey];
+                              const stable =
+                                r.type === "device"
+                                  ? stableDeviceStatuses[r.deviceName]
+                                  : stableMetricStatuses[stKey];
+                              const effective = live || stable;
+                              if (effective) return {};
                               return {
-                                animation:
-                                  "pulseSearch 1.2s ease-in-out infinite",
+                                animation: `${pulse} 1.2s ease-in-out infinite`,
                                 boxShadow: (theme: any) =>
                                   `0 0 4px 2px ${theme.palette.info.light}`,
                               };

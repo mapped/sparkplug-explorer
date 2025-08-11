@@ -24,7 +24,8 @@ export async function createSchema(
     ts timestamp not null,
     ingested_at timestamp not null default current_timestamp,
     value varchar(256),
-    from_birth boolean default false
+    from_birth boolean default false,
+    primary key(metric_id, ts)
   )`);
 
   // Indexes (no caching layer; pure SQL structures for query performance)
