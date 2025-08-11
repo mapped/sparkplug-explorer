@@ -1,0 +1,105 @@
+{
+  "info": {
+    "name": "Sparkplug Explorer API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "0.1.0"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "health"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Config",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/config",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "config"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List Devices",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/devices?limit=10000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "devices"],
+          "query": [{ "key": "limit", "value": "10000" }]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List Device Metrics",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/devices/:device/metrics?limit=10000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "devices", ":device", "metrics"],
+          "query": [{ "key": "limit", "value": "10000" }]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Latest Metric Value",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/metrics/:device/:metric/latest",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "metrics", ":device", ":metric", "latest"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Metric Values",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/metrics/:device/:metric/values?limit=10000&order=desc",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "metrics", ":device", ":metric", "values"],
+          "query": [
+            { "key": "limit", "value": "10000" },
+            { "key": "order", "value": "desc" }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Search",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/search?q=foo&limit=10000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "search"],
+          "query": [
+            { "key": "q", "value": "foo" },
+            { "key": "limit", "value": "10000" }
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [{ "key": "baseUrl", "value": "http://localhost:3000" }]
+}

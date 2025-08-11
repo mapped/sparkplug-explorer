@@ -5,16 +5,17 @@ export async function createSchema(
 ): Promise<void> {
   // devices table
   await connection.run(`create table if not exists devices (
-    device_name text,
+    device_name text primary key,
     topic text not null,
     birth_timestamp timestamp
   )`);
 
   // device_metrics table
   await connection.run(`create table if not exists device_metrics (
-    id text,
+    id text primary key,
     device_name text not null,
-    metric_name text not null
+    metric_name text not null,
+    unique(device_name, metric_name)
   )`);
 
   // device_metric_values table (value stored as string for flexible reporting)
@@ -23,8 +24,23 @@ export async function createSchema(
     ts timestamp not null,
     ingested_at timestamp not null default current_timestamp,
     value varchar(256),
-    from_birth boolean default false, -- indicates if this value is from a DBIRTH message
+    from_birth boolean default false,
+    primary key(metric_id, ts)
   )`);
+
+  // Indexes (no caching layer; pure SQL structures for query performance)
+  await connection.run(
+    `create index if not exists idx_devices_name on devices(device_name)`
+  );
+  await connection.run(
+    `create index if not exists idx_device_metrics_metric_name on device_metrics(metric_name)`
+  );
+  await connection.run(
+    `create index if not exists idx_device_metrics_dev_metric on device_metrics(device_name, metric_name)`
+  );
+  await connection.run(
+    `create index if not exists idx_metric_values_id_ts on device_metric_values(metric_id, ts)`
+  );
 }
 
 export async function loadExtensions(

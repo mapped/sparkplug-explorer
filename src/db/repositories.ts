@@ -45,10 +45,13 @@ export class DeviceRepository {
   constructor(private conn: DuckDBConnection) {}
 
   async upsert(device: Device): Promise<void> {
-    // Single statement upsert
+    // Idempotent upsert using ON CONFLICT
     await this.conn.run(
       `insert into devices(device_name, topic, birth_timestamp)
-       values($device_name, $topic, $birth_timestamp)`,
+       values($device_name, $topic, $birth_timestamp)
+       on conflict(device_name) do update set
+         topic=excluded.topic,
+         birth_timestamp=coalesce(excluded.birth_timestamp, devices.birth_timestamp)`,
       {
         device_name: device.deviceName,
         topic: device.topic,
@@ -80,7 +83,8 @@ export class DeviceMetricRepository {
   async upsert(deviceName: string, metricName: string): Promise<DeviceMetric> {
     const id = metricId(deviceName, metricName);
     await this.conn.run(
-      `insert into device_metrics(id, device_name, metric_name) values($id,$device_name,$metric_name)`,
+      `insert into device_metrics(id, device_name, metric_name) values($id,$device_name,$metric_name)
+       on conflict(id) do nothing`,
       { id, device_name: deviceName, metric_name: metricName }
     );
     return { id, deviceName, metricName };
@@ -105,7 +109,7 @@ export class DeviceMetricRepository {
     if (!rows.length) return [];
     const sql = `insert into device_metrics(id, device_name, metric_name) values ${rows.join(
       ","
-    )}`;
+    )} on conflict(id) do nothing`;
     await this.conn.run(sql);
     return Array.from(seen).map((id) => {
       const [deviceName, metricName] = id.split(":", 2); // metricId format assumed deviceName:metricName
@@ -131,11 +135,12 @@ export class DeviceMetricValueRepository {
 
   async insert(value: DeviceMetricValue): Promise<void> {
     await this.conn.run(
-      `insert into device_metric_values(metric_id, ts, value) values($metric_id,$ts,$value)`,
+      `insert into device_metric_values(metric_id, ts, value, from_birth) values($metric_id,$ts,$value,$from_birth) on conflict(metric_id, ts) do nothing`,
       {
         metric_id: value.metricId,
         ts: value.ts.toISOString().replace("T", " ").replace("Z", ""),
         value: toStoredValue(value.value),
+        from_birth: value.fromBirth ? true : false,
       }
     );
   }
@@ -157,7 +162,7 @@ export class DeviceMetricValueRepository {
     }
     const sql = `insert into device_metric_values(metric_id, ts, value, from_birth) values ${rows.join(
       ","
-    )}`;
+    )} on conflict(metric_id, ts) do nothing`;
     await this.conn.run(sql);
   }
 

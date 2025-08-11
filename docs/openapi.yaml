@@ -1,0 +1,434 @@
+openapi: 3.1.0
+info:
+  title: Sparkplug Explorer API
+  version: 0.1.0
+  description: REST API for devices, metrics, values, search and config.
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      description: Simple liveness probe.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                example: { ok: true }
+  /api/config:
+    get:
+      summary: UI / client configuration
+      description: Returns client‑consumable configuration values (not secrets).
+      responses:
+        "200":
+          description: Config values
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pollIntervalMs:
+                    type: integer
+                    description: Suggested client polling interval in milliseconds.
+                  searchLimit:
+                    type: integer
+                    description: Server side maximum allowed limit for list/search endpoints.
+                example:
+                  pollIntervalMs: 5000
+                  searchLimit: 10000
+  /api/devices:
+    get:
+      summary: List devices (keyset pagination)
+      description: Returns a page of devices ordered by deviceName using keyset (cursor) pagination.
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: string }
+          description: Exclusive cursor (last deviceName from previous page).
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 10000 }
+          description: Max number of devices to return.
+      responses:
+        "200":
+          description: Device page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DevicesPage"
+              examples:
+                sample:
+                  summary: Example devices page
+                  value:
+                    items:
+                      - deviceName: deviceA
+                        topic: spBv1.0/group/STATE/deviceA
+                        birthTimestamp: "2025-08-10T12:34:56.000Z"
+                      - deviceName: deviceB
+                        topic: spBv1.0/group/STATE/deviceB
+                        birthTimestamp: null
+                    count: 2
+                    nextCursor: deviceB
+                    limit: 10000
+  /api/devices/count:
+    get:
+      summary: Total device count
+      description: Returns the total number of devices (for virtualization sizing).
+      responses:
+        "200":
+          description: Count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                example: { count: 1234 }
+  /api/devices/index:
+    get:
+      summary: Device index lookup
+      description: Returns the zero-based index of a device by name (lexicographic order). 404 if not found.
+      parameters:
+        - in: query
+          name: device
+          required: true
+          schema: { type: string }
+          description: Device name to resolve.
+      responses:
+        "200":
+          description: Index
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  index: { type: integer }
+                example: { index: 42 }
+        "400": { description: Missing device parameter }
+        "404": { description: Not found }
+  /api/devices/{device}/metrics:
+    get:
+      summary: List metrics for a device (keyset pagination)
+      description: Returns metrics for the given device ordered by metricName.
+      parameters:
+        - in: path
+          name: device
+          required: true
+          schema: { type: string }
+          description: Device identifier.
+        - in: query
+          name: cursor
+          schema: { type: string }
+          description: Exclusive cursor (last metricName from previous page).
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 10000 }
+          description: Max number of metrics.
+      responses:
+        "200":
+          description: Metric page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceMetricsPage"
+              examples:
+                sample:
+                  summary: Example metrics page
+                  value:
+                    items:
+                      - metricName: temperature
+                        id: deviceA|temperature
+                      - metricName: humidity
+                        id: deviceA|humidity
+                    count: 2
+                    nextCursor: humidity
+                    limit: 10000
+  /api/devices/{device}/metrics/count:
+    get:
+      summary: Total metrics for a device
+      description: Returns total metric count for a specific device.
+      parameters:
+        - in: path
+          name: device
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                example: { count: 250 }
+  /api/devices/{device}/metrics/index:
+    get:
+      summary: Metric index lookup
+      description: Returns zero-based index of a metric within its device (lexicographic order). 404 if not found.
+      parameters:
+        - in: path
+          name: device
+          required: true
+          schema: { type: string }
+        - in: query
+          name: metric
+          required: true
+          schema: { type: string }
+          description: Metric name to resolve.
+      responses:
+        "200":
+          description: Index
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  index: { type: integer }
+                example: { index: 17 }
+        "400": { description: Missing metric parameter }
+        "404": { description: Not found }
+  /api/metrics/{device}/{metric}/latest:
+    get:
+      summary: Latest metric value
+      description: Retrieves the most recent recorded value for the specified metric.
+      parameters:
+        - in: path
+          name: device
+          required: true
+          schema: { type: string }
+          description: Device identifier.
+        - in: path
+          name: metric
+          required: true
+          schema: { type: string }
+          description: Metric name.
+      responses:
+        "200":
+          description: Latest value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LatestMetricValue"
+              examples:
+                sample:
+                  value:
+                    ts: "2025-08-10T13:00:00.000Z"
+                    value: 23.4
+                    fromBirth: false
+  /api/metrics/{device}/{metric}/values:
+    get:
+      summary: Historical metric values
+      description: Time bounded series query with keyset limit (non-streaming).
+      parameters:
+        - in: path
+          name: device
+          required: true
+          schema: { type: string }
+        - in: path
+          name: metric
+          required: true
+          schema: { type: string }
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+          description: Inclusive start timestamp (ISO8601). Defaults to 7 days ago.
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+          description: Exclusive end timestamp (ISO8601). Defaults to now.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 10000 }
+          description: Max number of rows returned.
+        - in: query
+          name: order
+          schema: { type: string, enum: [asc, desc], default: desc }
+          description: Sort direction by timestamp.
+      responses:
+        "200":
+          description: Value list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricValuesPage"
+              examples:
+                sample:
+                  value:
+                    device: deviceA
+                    metric: temperature
+                    from: "2025-08-09T13:00:00.000Z"
+                    to: "2025-08-10T13:00:00.000Z"
+                    count: 2
+                    truncated: false
+                    limit: 10000
+                    items:
+                      - ts: "2025-08-10T12:59:00.000Z"
+                        value: 23.4
+                        fromBirth: false
+                      - ts: "2025-08-10T12:58:00.000Z"
+                        value: 23.1
+                        fromBirth: false
+  /api/search:
+    get:
+      summary: Search devices or metrics (prefix)
+      description: Case-sensitive prefix search across device names and metric names.
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Prefix text. Empty returns first results ordered by name.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 10000 }
+          description: Max number of results.
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResults"
+              examples:
+                sample:
+                  value:
+                    query: temp
+                    limit: 10000
+                    count: 1
+                    truncated: false
+                    results:
+                      - type: metric
+                        deviceName: deviceA
+                        metricName: temperature
+components:
+  schemas:
+    Device:
+      type: object
+      description: A single discovered device.
+      properties:
+        deviceName: { type: string, description: Unique device identifier. }
+        topic:
+          { type: string, description: Sparkplug topic for the device birth. }
+        birthTimestamp:
+          {
+            type: string,
+            format: date-time,
+            nullable: true,
+            description: Timestamp of DBIRTH if known.,
+          }
+    Metric:
+      type: object
+      description: A metric registered for a device.
+      properties:
+        metricName: { type: string, description: Metric name as published. }
+        id: { type: string, description: Composite key device|metric. }
+    DevicesPage:
+      type: object
+      description: Paged device response.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Device" }
+        count:
+          { type: integer, description: Number of items returned in this page. }
+        nextCursor:
+          {
+            type: string,
+            nullable: true,
+            description: Cursor for the next page or null when no more.,
+          }
+        limit: { type: integer, description: Requested (clamped) limit. }
+    DeviceMetricsPage:
+      type: object
+      description: Paged device metrics response.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Metric" }
+        count: { type: integer, description: Number of metrics returned. }
+        nextCursor:
+          {
+            type: string,
+            nullable: true,
+            description: Cursor for the next page or null.,
+          }
+        limit: { type: integer, description: Requested (clamped) limit. }
+    LatestMetricValue:
+      type: object
+      description: The most recent metric value.
+      properties:
+        ts:
+          {
+            type: string,
+            format: date-time,
+            nullable: true,
+            description: Timestamp of value (null if none).,
+          }
+        value: { description: Raw value (DuckDB scalar). }
+        fromBirth:
+          {
+            type: boolean,
+            description: True if originated from a DBIRTH payload.,
+          }
+    MetricValue:
+      type: object
+      description: Single time-series point.
+      properties:
+        ts: { type: string, format: date-time }
+        value: {}
+        fromBirth: { type: boolean }
+    MetricValuesPage:
+      type: object
+      description: Time-series page (non-streaming) for a metric.
+      properties:
+        device: { type: string }
+        metric: { type: string }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        count: { type: integer }
+        truncated:
+          {
+            type: boolean,
+            description: True when more data may exist beyond returned window/limit.,
+          }
+        limit: { type: integer }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MetricValue" }
+    SearchResultDevice:
+      type: object
+      description: Device search hit.
+      properties:
+        type: { type: string, enum: [device] }
+        deviceName: { type: string }
+    SearchResultMetric:
+      type: object
+      description: Metric search hit.
+      properties:
+        type: { type: string, enum: [metric] }
+        deviceName: { type: string }
+        metricName: { type: string }
+    SearchResults:
+      type: object
+      description: Search results page.
+      properties:
+        query: { type: string }
+        limit: { type: integer }
+        count: { type: integer }
+        truncated:
+          {
+            type: boolean,
+            description: True when additional matches were truncated by limit.,
+          }
+        results:
+          type: array
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/SearchResultDevice"
+              - $ref: "#/components/schemas/SearchResultMetric"

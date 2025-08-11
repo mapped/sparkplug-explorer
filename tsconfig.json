@@ -12,5 +12,6 @@
     "sourceMap": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist"]
+  // Exclude UI React sources from tsc (handled by Vite)
+  "exclude": ["node_modules", "dist", "src/ui"]
 }
