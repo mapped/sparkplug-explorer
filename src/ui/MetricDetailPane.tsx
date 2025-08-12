@@ -287,7 +287,10 @@ const MetricDetailPane: React.FC<Props> = ({ device, metric }) => {
         <ToggleButton value="7d">7d</ToggleButton>
       </ToggleButtonGroup>
       {showChart && (
-        <Paper variant="outlined" sx={{ flex: 0, minHeight: chartHeight, p: 1 }}>
+        <Paper
+          variant="outlined"
+          sx={{ flex: 0, minHeight: chartHeight, p: 1 }}
+        >
           <ResponsiveContainer width="100%" height={chartHeight - 16}>
             <LineChart
               data={chartData}

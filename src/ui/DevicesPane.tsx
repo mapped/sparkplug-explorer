@@ -29,6 +29,7 @@ interface DeviceStatusMap {
 const PAGE_SIZE = 500; // large chunk for fewer round trips
 const ITEM_HEIGHT = 48;
 const PREFETCH_THRESHOLD = 50; // when within last N loaded rows, fetch next page
+const FOOTER_HEIGHT = 28;
 
 const pulse = keyframes`
   0% { transform: scale(.6); opacity: .4; }
@@ -55,15 +56,21 @@ const DevicesPane: React.FC<Props> = ({ selectedDevice, onSelect }) => {
   const [containerHeight, setContainerHeight] = useState<number>(0);
 
   const fetchTotal = useCallback(async () => {
-    if (total !== undefined) return;
-    const r = await fetch("/api/devices/count").then((r) => r.json());
-    setTotal(r.count);
-  }, [total]);
+    try {
+      const r = await fetch("/api/devices/count").then((r) => r.json());
+      setTotal(r.count);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (loading || fetchingRef.current) return;
+    const effectiveCursor =
+      cursor ??
+      (devices.length ? devices[devices.length - 1].deviceName : undefined);
     if (
-      cursor === undefined &&
+      effectiveCursor === undefined &&
       devices.length &&
       total !== undefined &&
       devices.length >= total
@@ -73,11 +80,15 @@ const DevicesPane: React.FC<Props> = ({ selectedDevice, onSelect }) => {
     setLoading(true);
     const params = new URLSearchParams();
     params.set("limit", String(PAGE_SIZE));
-    if (cursor) params.set("cursor", cursor);
+    if (effectiveCursor) params.set("cursor", effectiveCursor);
     const r = await fetch(`/api/devices?${params.toString()}`).then((r) =>
       r.json()
     );
-    setDevices((prev) => [...prev, ...r.items]);
+    setDevices((prev) => {
+      // If we reloaded first page (no cursor), avoid duplicating by replacing when prev is empty
+      if (!effectiveCursor) return [...prev, ...r.items];
+      return [...prev, ...r.items];
+    });
     if (r.nextCursor) setCursor(r.nextCursor);
     else setCursor(undefined);
     setLoading(false);
@@ -273,9 +284,20 @@ const DevicesPane: React.FC<Props> = ({ selectedDevice, onSelect }) => {
     if (!hasLoading) return;
     const id = window.setInterval(() => {
       fetchStatuses(slice.map((d) => d.deviceName));
-    }, 3000);
+    }, 2000);
     return () => window.clearInterval(id);
   }, [devices, statuses, fetchStatuses]);
+
+  useEffect(() => {
+    // Periodically refresh total and append new pages if available
+    const id = window.setInterval(() => {
+      void fetchTotal();
+      if (cursor || (total !== undefined && devices.length < total)) {
+        void loadMore();
+      }
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [fetchTotal, loadMore, cursor, devices.length, total]);
 
   return (
     <Box
@@ -290,7 +312,7 @@ const DevicesPane: React.FC<Props> = ({ selectedDevice, onSelect }) => {
     >
       {containerHeight > 0 && (
         <VList
-          height={containerHeight}
+          height={Math.max(0, containerHeight - FOOTER_HEIGHT)}
           width={280}
           itemCount={itemCount}
           itemSize={ITEM_HEIGHT}
@@ -303,6 +325,27 @@ const DevicesPane: React.FC<Props> = ({ selectedDevice, onSelect }) => {
           {({ index, style }: any) => <Row index={index} style={style} />}
         </VList>
       )}
+      <Box
+        sx={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: FOOTER_HEIGHT,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          px: 1,
+          borderTop: 1,
+          borderColor: "divider",
+          bgcolor: "background.paper",
+          fontSize: 12,
+          color: "text.secondary",
+        }}
+      >
+        <span>Total devices: {total ?? "…"}</span>
+        <span>Loaded: {devices.length}</span>
+      </Box>
     </Box>
   );
 };
