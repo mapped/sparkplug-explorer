@@ -30,6 +30,7 @@ interface MetricStatusMap {
 const PAGE_SIZE = 500;
 const ITEM_HEIGHT = 40;
 const PREFETCH_THRESHOLD = 50;
+const FOOTER_HEIGHT = 28;
 
 const pulse = keyframes`
   0% { transform: scale(.6); opacity: .4; }
@@ -252,7 +253,7 @@ const MetricsPane: React.FC<Props> = ({
     if (!hasLoading) return;
     const id = window.setInterval(() => {
       fetchStatuses(slice.map((m) => m.metricName));
-    }, 3000);
+    }, 2000);
     return () => window.clearInterval(id);
   }, [metrics, statuses, fetchStatuses]);
 
@@ -268,7 +269,7 @@ const MetricsPane: React.FC<Props> = ({
     >
       {containerHeight > 0 && (
         <VList
-          height={containerHeight}
+          height={Math.max(0, containerHeight - FOOTER_HEIGHT)}
           width={340}
           itemCount={itemCount}
           itemSize={ITEM_HEIGHT}
@@ -281,6 +282,27 @@ const MetricsPane: React.FC<Props> = ({
           {({ index, style }: any) => <Row index={index} style={style} />}
         </VList>
       )}
+      <Box
+        sx={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: FOOTER_HEIGHT,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          px: 1,
+          borderTop: 1,
+          borderColor: "divider",
+          bgcolor: "background.paper",
+          fontSize: 12,
+          color: "text.secondary",
+        }}
+      >
+        <span>Total metrics: {total ?? (device ? "…" : 0)}</span>
+        <span>Loaded: {metrics.length}</span>
+      </Box>
     </Box>
   );
 };
