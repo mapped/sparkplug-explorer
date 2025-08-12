@@ -6,7 +6,7 @@ A combined Sparkplug B ingestion service and interactive web UI for exploring de
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 23+
 - Yarn 1.x (or npm)
 - MQTT broker emitting Sparkplug B (optional for UI-only exploration)
 
@@ -21,23 +21,28 @@ yarn install
 ```json
 {
   "sparkplug": {
-    "groupIds": ["sp_group"],
-    "systemTopic": "spBv1.0/sp_group/STATE"
+    "groupIds": ["someGroup"],
+    "systemTopic": "$sparkplug/certificates"
   },
   "mqtt": {
-    "url": "mqtts://broker.example.com:8883",
+    "url": "mqtts://example.com:8883",
     "protocolVersion": 5,
-    "clientId": "explorer-client",
-    "hostId": "explorer-host",
-    "reconnectBackoffSec": 5,
-    "keepaliveSec": 30
+    "clientId": "local",
+    "hostId": "myHost"
   },
-  "advanced": { "disableTimeseries": false },
-  "secrets": { "credentials": { "username": "user", "password": "pass" } }
+  "secrets": {
+    "key": "",
+    "cert": "",
+    "ca": "",
+    "passphrase": "",
+    "credentials": {
+      "username": "-mapped-hivemq-testuser",
+      "password": ""
+    }
+  }
 }
-```
 
-(Only the MQTT section + secrets credentials are strictly consumed by current code; unused advanced keys are placeholders.)
+```
 
 ### 3. Run in Development (API + UI middleware)
 
