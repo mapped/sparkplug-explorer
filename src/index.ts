@@ -1,6 +1,25 @@
 /**
  * Main entrypoint: Sparkplug ingestion + API server.
- * Provides REST API only (no static asset serving).
+ *
+ * What this process does (high level):
+ * - Connects to an MQTT broker as a Sparkplug Host Application client (see src/clients/sparkplug).
+ * - Listens for Sparkplug DBIRTH (device birth) and DDATA (device data) messages.
+ * - Queues inbound messages and ingests them into DuckDB in micro-batches inside transactions.
+ * - Exposes a Fastify REST API used by the React UI (served via Vite middleware during dev).
+ *
+ * Key behaviors and constraints:
+ * - Persistence: DuckDB file path is configurable via DUCKDB_PATH; we index common access paths.
+ * - Ingestion ordering: DBIRTH is prioritized ahead of DDATA to ensure devices/metrics exist before values.
+ * - Batching: up to MAX_BATCH_MESSAGES are processed per transaction or after MAX_BATCH_DELAY_MS since last event.
+ * - Status colors: computed in SQL (green/yellow/red/grey) to avoid JS time parsing ambiguity.
+ * - Search: case-insensitive prefix matching via ILIKE on devices and metrics.
+ *
+ * Notable env vars:
+ * - CONFIG_PATH: required if no CLI path argument is supplied for config JSON.
+ * - DISABLE_SPARKPLUG=1 to run API/UI without MQTT ingestion.
+ * - TRACE=1 (or true) to trace SQL and raw rows for status endpoints.
+ * - LOG_REQUESTS=1 or LOG_SLOW_MS to increase request logging.
+ * - DISABLE_VITE=1 to disable dev-time Vite middleware.
  */
 import Fastify from "fastify";
 const cors = require("@fastify/cors");
@@ -30,6 +49,10 @@ import { readFileSync } from "fs";
 import path from "path";
 
 // -------------------- Config Types --------------------
+/**
+ * Configuration loaded from CONFIG_PATH or argv[2].
+ * Some advanced fields exist for future use (not all are currently referenced).
+ */
 interface Config {
   sparkplug: {
     groupIds: string[];
@@ -83,6 +106,10 @@ let metricRepo: DeviceMetricRepository;
 let metricValueRepo: DeviceMetricValueRepository;
 let connRef: DuckDBConnection; // hold raw connection for explicit transactions
 
+/**
+ * Initialize DuckDB connection, create schema, and attempt to start DuckDB UI.
+ * We also raise the memory_limit pragma to a sane default for analytics workloads.
+ */
 async function initDb() {
   const conn = await getConnection();
   connRef = conn;
@@ -98,7 +125,7 @@ async function initDb() {
   }
   await loadExtensions(conn); // optional UI extension
   await createSchema(conn);
-  // Start DuckDB UI for interactive inspection
+  // Start DuckDB UI for interactive inspection (best-effort)
   try {
     const uiReader = await conn.runAndReadAll(`CALL start_ui_server();`);
     const rows = uiReader.getRowObjects();
@@ -112,8 +139,8 @@ async function initDb() {
 }
 
 // ---- Queued Event Processing (priority: DBIRTH before DDATA) ----
-// In-memory caches to avoid duplicate device & metric inserts (since no ON CONFLICT now)
-// const knownMetrics = new Set<string>(); // key = metricId(device, metricName)
+// We keep two in-memory queues and always drain DBIRTH first to ensure referential integrity.
+// Micro-batching reduces transaction overhead and improves throughput.
 
 type InboundEvent = {
   type: "DBIRTH" | "DDATA";
@@ -123,12 +150,16 @@ type InboundEvent = {
 };
 const birthQueue: InboundEvent[] = [];
 const dataQueue: InboundEvent[] = [];
-let drainScheduled = false;
-let timer: NodeJS.Timeout | null = null;
-let draining = false;
+let drainScheduled = false; // guards scheduling a drain tick
+let timer: NodeJS.Timeout | null = null; // timeout reference for micro-batch window
+let draining = false; // reentrancy guard
 const MAX_BATCH_MESSAGES = 500; // process up to this many messages per transaction
-const MAX_BATCH_DELAY_MS = 1000; // micro-batch window
+const MAX_BATCH_DELAY_MS = 1000; // micro-batch window (coalesce bursts)
 
+/**
+ * Schedule a drain of the queues after MAX_BATCH_DELAY_MS unless one is already scheduled.
+ * If the combined queue size reaches MAX_BATCH_MESSAGES, we bypass the timer and drain immediately.
+ */
 function scheduleDrain() {
   if (drainScheduled) return;
   drainScheduled = true;
@@ -140,6 +171,14 @@ function scheduleDrain() {
   }, MAX_BATCH_DELAY_MS);
 }
 
+/**
+ * Drain both DBIRTH and DDATA queues in micro-batches, in that priority order.
+ * For each batch:
+ * - Extract up to MAX_BATCH_MESSAGES items.
+ * - Build newDevices, newMetrics, and metricValues arrays.
+ * - Perform a single transaction inserting devices, metrics (bulk), and metric values (bulk).
+ * - Roll back the whole batch on any error to avoid partial ingestion.
+ */
 async function drainQueues() {
   if (draining) return; // prevent re-entry
   draining = true;
@@ -174,6 +213,7 @@ async function drainQueues() {
 
       for (const evt of batch) {
         if (evt.type === "DBIRTH") {
+          // DBIRTH topic comes in on system topic; deviceId resolved via parseCertificateTopic
           const { deviceId } = parseCertificateTopic(evt.topic);
           if (!deviceId) continue;
           newDevices.push({
@@ -182,12 +222,13 @@ async function drainQueues() {
             birthTimestamp: ts(evt.payload.timestamp),
           });
           logger.info(`Processing DBIRTH for device: ${deviceId}`);
+          // Each metric in the birth payload contributes a metric row and an initial value row (if value present)
           for (const m of evt.payload.metrics || []) {
             const name = resolveMetricName(m);
             if (!name) continue;
             const id = metricId(deviceId, name);
             const val = getMetricValue(m, logger);
-            // This must go above the newMetrics.push to avoid undsired metrics
+            // Only ingest metrics that carry a usable value (ignores templates w/o value, nulls, etc.)
             if (val === null || val === undefined) continue;
             newMetrics.push({ deviceName: deviceId, metricName: name });
             const tstamp = tsHelper(m.timestamp);
@@ -200,7 +241,7 @@ async function drainQueues() {
             metricsInBatch++;
           }
         } else {
-          // DDATA
+          // DDATA carries incremental values for existing metrics; we still upsert metric names defensively upstream
           const t = parseTopic(evt.topic);
           const deviceId = t.deviceId;
           if (!deviceId) continue;
@@ -225,7 +266,7 @@ async function drainQueues() {
       await connRef.run("BEGIN TRANSACTION");
       let failed = false;
       try {
-        // Bulk insert devices (still one-by-one since deviceRepo lacks bulk; could optimize later)
+        // Devices: idempotent upsert (topic, birth timestamp)
         for (const d of newDevices) {
           await deviceRepo.upsert({
             deviceName: d.deviceName,
@@ -233,9 +274,9 @@ async function drainQueues() {
             birthTimestamp: d.birthTimestamp || null,
           });
         }
-        // Bulk insert metrics
+        // Metrics: bulk insert, ON CONFLICT DO NOTHING inside repository layer
         await metricRepo.insertMany(newMetrics);
-        // Bulk insert metric values
+        // Values: bulk insert, ON CONFLICT(metric_id, ts) DO NOTHING
         await metricValueRepo.insertMany(metricValues);
         await connRef.run("COMMIT");
       } catch (err) {
@@ -251,7 +292,7 @@ async function drainQueues() {
       const duration = Date.now() - batchStartWall;
       logger
         .with()
-        .bool?.("processingBirth", processingBirth)
+        .bool("processingBirth", processingBirth)
         .num("batchMessages", batch.length)
         .num("metrics", metricsInBatch)
         .num("queueBirthRemaining", birthQueue.length)
@@ -262,7 +303,7 @@ async function drainQueues() {
         .num("newMetrics", newMetrics.length)
         .num("metricValues", metricValues.length)
         .num("ms", duration)
-        .bool?.("failed", failed)
+        .bool("failed", failed)
         .logger()
         .info("Batch committed");
     }
@@ -271,6 +312,9 @@ async function drainQueues() {
   }
 }
 
+/**
+ * Enqueue a new inbound event and either schedule a drain or drain immediately if thresholds are hit.
+ */
 function enqueueEvent(e: InboundEvent) {
   if (e.type === "DBIRTH") birthQueue.push(e);
   else dataQueue.push(e);
@@ -291,6 +335,7 @@ function enqueueEvent(e: InboundEvent) {
 const POLL_INTERVAL = parseInt(process.env.UI_POLL_INTERVAL_MS || "5000", 10);
 const API_MAX_LIMIT = 10000; // unified soft max/default for list endpoints
 
+/** Normalize DuckDB TIMESTAMP to ISO 8601 string for API responses. */
 function normalizeTs(row: any, key: string) {
   if (row[key] == null) return null;
   const v = row[key];
@@ -298,16 +343,27 @@ function normalizeTs(row: any, key: string) {
   return new Date(String(v).replace(" ", "T") + "Z").toISOString();
 }
 
+/** Parse and bound a limit parameter with an upper cap to keep responses sane. */
 function coerceLimit(raw: any): number {
   const n = parseInt(raw, 10);
   if (!n || n <= 0) return API_MAX_LIMIT; // default
   return Math.min(n, API_MAX_LIMIT); // enforce upper bound
 }
 
+/** Convert bigint from DuckDB COUNT(*) to number for JSON. */
 function coerceBigInt(v: any) {
   return typeof v === "bigint" ? Number(v) : v;
 }
 
+/**
+ * Register all REST API routes. These are designed to be UI-friendly and efficient on DuckDB.
+ *
+ * Patterns used:
+ * - Cursor pagination: use device_name or metric_name as cursor for consistent lexicographic order.
+ * - Dedicated endpoints for counts and indexes (to support scrolling to selection in virtual lists).
+ * - Time series endpoints with explicit from/to/limit/order to bound result sizes.
+ * - Status endpoints compute recency classification entirely in SQL.
+ */
 function registerApi(app: any) {
   app.get("/api/health", async () => ({ ok: true }));
   app.get("/api/config", async () => ({
@@ -501,6 +557,7 @@ function registerApi(app: any) {
       ),
     };
   });
+  // Status endpoints compute color entirely in SQL based on recency of data
   app.get("/api/devices/status", async (req: any, reply: any) => {
     const list = String(req.query.devices || "")
       .split(",")
@@ -509,10 +566,11 @@ function registerApi(app: any) {
     if (TRACE_ENABLED)
       logger
         .with()
-        .any?.("devices", list)
+        .any("devices", list)
         .logger()
         .info("trace devices/status request list");
     if (!list.length) return { statuses: [] };
+    // Build VALUES list and parameter bag dynamically for variable input length
     const valuesClause = list.map((_, i) => `($d${i})`).join(",");
     const params: Record<string, any> = {};
     list.forEach((d, i) => (params[`d${i}`] = d));
@@ -530,14 +588,14 @@ function registerApi(app: any) {
       left join device_metric_values v on v.metric_id = m.id
       group by i.device_name`;
     if (TRACE_ENABLED)
-      logger.with().str?.("sql", sql).logger().info("trace devices/status sql");
+      logger.with().str("sql", sql).logger().info("trace devices/status sql");
     const conn = await getConnection();
     const reader = await conn.runAndReadAll(sql, params);
     const rows = reader.getRowObjects();
     if (TRACE_ENABLED)
       logger
         .with()
-        .any?.("rows", rows)
+        .any("rows", rows)
         .logger()
         .info("trace devices/status raw rows");
     const statuses = rows.map((r: any) => ({
@@ -547,7 +605,7 @@ function registerApi(app: any) {
     if (TRACE_ENABLED)
       logger
         .with()
-        .any?.("statuses", statuses)
+        .any("statuses", statuses)
         .logger()
         .info("trace devices/status result");
     return { statuses };
@@ -563,8 +621,8 @@ function registerApi(app: any) {
       if (TRACE_ENABLED)
         logger
           .with()
-          .str?.("device", device)
-          .array?.("metrics", list)
+          .str("device", device)
+          .array("metrics", list)
           .logger()
           .info("trace metrics/status request list");
       if (!list.length) return { statuses: [] };
@@ -585,18 +643,14 @@ function registerApi(app: any) {
       left join device_metric_values v on v.metric_id = dm.id
       group by i.metric_name`;
       if (TRACE_ENABLED)
-        logger
-          .with()
-          .str?.("sql", sql)
-          .logger()
-          .info("trace metrics/status sql");
+        logger.with().str("sql", sql).logger().info("trace metrics/status sql");
       const conn = await getConnection();
       const reader = await conn.runAndReadAll(sql, params);
       const rows = reader.getRowObjects();
       if (TRACE_ENABLED)
         logger
           .with()
-          .any?.("rows", rows)
+          .any("rows", rows)
           .logger()
           .info("trace metrics/status raw rows");
       const statuses = rows.map((r: any) => ({
@@ -606,7 +660,7 @@ function registerApi(app: any) {
       if (TRACE_ENABLED)
         logger
           .with()
-          .any?.("statuses", statuses)
+          .any("statuses", statuses)
           .logger()
           .info("trace metrics/status result");
       return { statuses };
@@ -615,6 +669,10 @@ function registerApi(app: any) {
 }
 
 // -------------------- Web Server (API only) --------------------
+/**
+ * Starts a Fastify server that only serves the REST API. In development, we mount Vite's
+ * dev middlewares to serve the React UI and enable HMR without a separate process.
+ */
 async function startWebServer() {
   const app = Fastify({ logger: true });
   app.register(cors, { origin: true });
@@ -640,10 +698,10 @@ async function startWebServer() {
       ) {
         logger
           .with()
-          .str?.("method", req.method)
-          .str?.("url", req.url)
-          .num?.("status", sc)
-          .num?.("ms", durMs || 0)
+          .str("method", req.method)
+          .str("url", req.url)
+          .num("status", sc)
+          .num("ms", durMs || 0)
           .logger()
           .info("request");
       }
@@ -658,8 +716,8 @@ async function startWebServer() {
     logger
       .with()
       .error(err)
-      .str?.("method", req.method)
-      .str?.("url", req.url)
+      .str("method", req.method)
+      .str("url", req.url)
       .logger()
       .error("unhandled");
     if (!reply.sent) {
@@ -737,6 +795,13 @@ async function startWebServer() {
 }
 
 // -------------------- Main Flow --------------------
+/**
+ * Program entrypoint:
+ * - Initialize database and repositories.
+ * - If enabled, start MQTT Sparkplug ingestion client (with TLS options if configured).
+ * - Start Fastify web server (and Vite dev middleware in development).
+ * - Attach signal handlers for graceful shutdown.
+ */
 async function main() {
   await initDb();
   if (process.env.DISABLE_SPARKPLUG !== "1") {
@@ -760,6 +825,7 @@ async function main() {
       } as any,
     });
 
+    // MQTT lifecycle logs (human friendly)
     client.on("connect", () => logger.info("✅ Connected"));
     client.on("reconnect", () => logger.info("🔄 Reconnecting"));
     client.on("close", () => logger.info("🔄 Closed"));
@@ -772,6 +838,8 @@ async function main() {
       logger.with().error(e).logger().error("❌ MQTT error")
     );
 
+    // Route Sparkplug messages into ingestion queues.
+    // DBIRTH arrives on the configured systemTopic; DDATA on spBv1.0 paths.
     client.on("message", (topic: string, payload: any) => {
       try {
         if (topic.startsWith(config.sparkplug.systemTopic)) {

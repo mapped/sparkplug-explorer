@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build && tsc -p .",
     "start": "NODE_OPTIONS=--max-old-space-size=8192 node dist/index.js",
-    "dev": "NODE_OPTIONS=--max-old-space-size=8192 tsx watch --clear-screen=false src/index.ts",
+    "dev": "NODE_OPTIONS=--max-old-space-size=8192 npx tsx watch --clear-screen=false src/index.ts",
     "dev:tsnode": "NODE_OPTIONS=--max-old-space-size=8192 ts-node src/index.ts",
     "dev:webonly": "NODE_OPTIONS=--max-old-space-size=8192 DISABLE_SPARKPLUG=1 tsx watch --clear-screen=false src/index.ts",
     "report": "NODE_OPTIONS=--max-old-space-size=8192 ts-node src/report.ts",
