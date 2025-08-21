@@ -855,6 +855,15 @@ async function main() {
         } else if (topic.startsWith("spBv1.0/")) {
           const t = parseTopic(topic);
           if (t.messageType === "DDATA") {
+            // Log entire DDATA message
+            if (TRACE_ENABLED) {
+              logger
+                .with()
+                .any("payload", payload)
+                .str("topic", topic)
+                .logger()
+                .info("Received DDATA message");
+            }
             enqueueEvent({
               type: "DDATA",
               topic,
