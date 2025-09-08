@@ -41,7 +41,6 @@ yarn install
     }
   }
 }
-
 ```
 
 ### 3. Run in Development (API + UI middleware)
@@ -142,8 +141,6 @@ Search response:
 
 ## Environment Variables (Complete)
 
-
-
 | Variable                      | Purpose                        | Default                     |
 | ----------------------------- | ------------------------------ | --------------------------- |
 | CONFIG_PATH                   | Path to JSON config            | (required if no CLI arg)    |
@@ -230,6 +227,71 @@ Custom logger (JSON or color simple). Use GLOBAL_LOG_LEVEL & TRACE for deep debu
 - DuckDB UI extension attempts to start; logs success/failure
 - GLOBAL_LOG_FORMAT=simple for readable console
 - TRACE=1 to inspect status SQL & rows
+
+## Docker
+
+Build the image:
+
+```
+docker build -t sparkplug-explorer:latest .
+```
+
+Run with mounted config + data directories (creates local folders if absent):
+
+```
+mkdir -p runtime-config runtime-data
+cp config.json runtime-config/config.json  # or create your own
+
+docker run --name sparkplug-explorer \
+  -p 3000:3000 \
+  -e CONFIG_PATH=/app/config/config.json \
+  -e DUCKDB_PATH=/app/data/db.duckdb \
+  -v $(pwd)/runtime-config:/app/config:ro \
+  -v $(pwd)/runtime-data:/app/data \
+  sparkplug-explorer:latest
+```
+
+Visit: http://localhost:3000
+
+Environment overrides (examples):
+
+```
+-e DISABLE_SPARKPLUG=1        # UI/API only
+-e GLOBAL_LOG_LEVEL=DEBUG
+-e TRACE=1                    # trace status SQL
+```
+
+Rebuild without cache:
+
+```
+docker build --no-cache -t sparkplug-explorer:latest .
+```
+
+Optional docker-compose.yml snippet:
+
+```yaml
+services:
+  explorer:
+    build: .
+    image: sparkplug-explorer:latest
+    container_name: sparkplug-explorer
+    restart: unless-stopped
+    environment:
+      CONFIG_PATH: /app/config/config.json
+      DUCKDB_PATH: /app/data/db.duckdb
+      GLOBAL_LOG_LEVEL: INFO
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./runtime-config:/app/config:ro
+      - ./runtime-data:/app/data
+```
+
+Start with compose:
+
+```
+docker compose up --build
+```
 
 ## License
 
