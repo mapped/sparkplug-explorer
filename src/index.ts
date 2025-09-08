@@ -231,13 +231,18 @@ async function drainQueues() {
             // Only ingest metrics that carry a usable value (ignores templates w/o value, nulls, etc.)
             if (val === null || val === undefined) continue;
             newMetrics.push({ deviceName: deviceId, metricName: name });
-            const tstamp = tsHelper(m.timestamp);
-            metricValues.push({
-              metricId: id,
-              ts: tstamp,
-              value: val,
-              fromBirth: true,
-            });
+            if (
+              process.env.WRITE_BIRTH_VALUES === "1" ||
+              process.env.WRITE_BIRTH_VALUES === "true"
+            ) {
+              const tstamp = tsHelper(m.timestamp);
+              metricValues.push({
+                metricId: id,
+                ts: tstamp,
+                value: val,
+                fromBirth: true,
+              });
+            }
             metricsInBatch++;
           }
         } else {
@@ -674,7 +679,7 @@ function registerApi(app: any) {
  * dev middlewares to serve the React UI and enable HMR without a separate process.
  */
 async function startWebServer() {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: false });
   app.register(cors, { origin: true });
 
   // ---- Global request/response instrumentation ----
