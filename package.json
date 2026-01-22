@@ -32,7 +32,7 @@
     "react-window": "^1.8.10"
   },
   "devDependencies": {
-    "@fastify/middie": "^9.0.3",
+    "@fastify/middie": "^9.1.0",
     "@types/node": "^20.0.0",
     "@types/pako": "^2.0.3",
     "@types/react": "^18.2.21",
