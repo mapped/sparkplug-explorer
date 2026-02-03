@@ -21,7 +21,7 @@
     "@mui/icons-material": "^5.15.20",
     "@mui/material": "^5.15.20",
     "@mui/x-data-grid": "^6.19.6",
-    "fastify": "^5.4.0",
+    "fastify": "^5.7.3",
     "long": "^5.2.3",
     "mqtt": "^5.8.1",
     "pako": "^2.1.0",
