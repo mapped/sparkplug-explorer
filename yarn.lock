@@ -506,10 +506,10 @@
   dependencies:
     dequal "^2.0.3"
 
-"@fastify/middie@^9.2.0":
-  version "9.2.0"
-  resolved "https://registry.yarnpkg.com/@fastify/middie/-/middie-9.2.0.tgz#40498ea55ddf85afbe976c4be1fc2fe4ebb2d991"
-  integrity sha512-ZPH8sM83f+bBmIHNT0KixdVQ/02Ijgs3TSpDIC5I7XMQLJ4eVTGRRTigT1Bchfgtea+yZ/O2xDdGhkDBRouUuQ==
+"@fastify/middie@^9.3.2":
+  version "9.3.2"
+  resolved "https://registry.yarnpkg.com/@fastify/middie/-/middie-9.3.2.tgz#c7f1d067ddc04654596a401351e45692d3b33987"
+  integrity sha512-5C3xMHJxpfqoHd+xZSHPBI71fpzkoF6wMsYtgzXRyQUNvsIAxJm2yY4r2fUjF0h3rS9MXlo/aXLaXv3s4TL+JQ==
   dependencies:
     "@fastify/error" "^4.0.0"
     fastify-plugin "^5.0.0"
