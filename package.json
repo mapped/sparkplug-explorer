@@ -2,7 +2,6 @@
   "name": "sparkplug-explorer",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "yarn@1.22.22",
   "scripts": {
     "build": "vite build && tsc -p .",
     "start": "NODE_OPTIONS=--max-old-space-size=8192 node dist/index.js",
@@ -17,7 +16,7 @@
     "@emotion/react": "^11.11.4",
     "@emotion/styled": "^11.11.5",
     "@fastify/cors": "^11.1.0",
-    "@fastify/static": "^7.0.4",
+    "@fastify/static": "^10.1.2",
     "@mui/icons-material": "^5.15.20",
     "@mui/material": "^5.15.20",
     "@mui/x-data-grid": "^6.19.6",
@@ -31,9 +30,8 @@
     "sparkplug-payload": "^1.0.3",
     "react-window": "^1.8.10"
   },
-  "resolutions": {
-    "protobufjs": "^7.6.3",
-    "ip-address": "^10.1.1"
+  "overrides": {
+    "protobufjs": "^7.6.5"
   },
   "devDependencies": {
     "@fastify/middie": "^9.3.2",
