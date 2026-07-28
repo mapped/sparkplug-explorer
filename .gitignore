@@ -19,6 +19,6 @@ jwt.txt
 merges
 node_modulesa
 out
-package-lock.json
 scratch
 *.log
+yarn.lock

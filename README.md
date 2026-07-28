@@ -7,13 +7,13 @@ A combined Sparkplug B ingestion service and interactive web UI for exploring de
 ### Prerequisites
 
 - Node.js 23+
-- Yarn 1.x (or npm)
+- npm
 - MQTT broker emitting Sparkplug B (optional for UI-only exploration)
 
 ### 1. Install Dependencies
 
 ```
-yarn install
+npm install
 ```
 
 ### 2. Create a Config File (config.json)
@@ -46,13 +46,13 @@ yarn install
 ### 3. Run in Development (API + UI middleware)
 
 ```
-yarn dev config.json
+npm run dev config.json
 ```
 
 Or:
 
 ```
-CONFIG_PATH=./config.json yarn dev
+CONFIG_PATH=./config.json npm run dev
 ```
 
 Visit: http://localhost:3000
@@ -60,14 +60,14 @@ Visit: http://localhost:3000
 Disable ingestion (UI/API only):
 
 ```
-DISABLE_SPARKPLUG=1 yarn dev config.json
+DISABLE_SPARKPLUG=1 npm run dev config.json
 ```
 
 ### 4. Production Build & Run
 
 ```
-yarn build
-CONFIG_PATH=./config.json yarn start
+npm run build
+CONFIG_PATH=./config.json npm start
 ```
 
 Artifacts:

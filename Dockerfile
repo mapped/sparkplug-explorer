@@ -28,10 +28,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 # Dependency layer (cached unless package manifests change)
-COPY package.json yarn.lock ./
-# Use BuildKit cache for yarn downloads (speeds up iterative builds)
-RUN --mount=type=cache,id=yarn-cache,target=/root/.cache/yarn \
-  yarn install --frozen-lockfile
+COPY package.json package-lock.json ./
+# Use BuildKit cache for npm downloads (speeds up iterative builds)
+RUN --mount=type=cache,id=npm-cache,target=/root/.npm \
+  npm ci
 
 # Copy source (kept separate to maximize caching of deps layer)
 COPY tsconfig.json vite.config.ts index.html ./
@@ -39,7 +39,7 @@ COPY src ./src
 COPY README.md ./
 
 # Build server (tsc) + UI (vite)
-RUN yarn build
+RUN npm run build
 
 #############################
 # Stage 2: prod-deps (only production dependencies)
@@ -48,10 +48,10 @@ FROM node:${NODE_VERSION}-bookworm-slim AS prod-deps
 ARG TARGETARCH
 WORKDIR /app
 ENV CI=1 NODE_ENV=production
-COPY package.json yarn.lock ./
+COPY package.json package-lock.json ./
 # Install only production deps for target arch with cache
-RUN --mount=type=cache,id=yarn-prod-cache,target=/root/.cache/yarn \
-  yarn install --production --frozen-lockfile && yarn cache clean || true
+RUN --mount=type=cache,id=npm-prod-cache,target=/root/.npm \
+  npm ci --omit=dev
 
 #############################
 # Stage 3: runtime (slim final image)
@@ -81,7 +81,7 @@ ENV NODE_ENV=production \
 
 # Copy production dependencies only
 COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=prod-deps /app/package.json /app/yarn.lock ./
+COPY --from=prod-deps /app/package.json /app/package-lock.json ./
 
 # Copy built artifacts
 COPY --from=build /app/dist ./dist
